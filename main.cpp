@@ -1,95 +1,67 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
-#include <queue>
 #include "game.h"
 
 using namespace std;
-
-struct Candidate {
-    char op;
-    int total_score;
-    int immediate_reward;
-    
-    bool operator<(const Candidate& other) const {
-        return total_score < other.total_score;
-    }
-};
-
-int evaluatePath(Game* game, vector<char> ops) {
-    auto save = game->save();
-    int total_reward = 0;
-    
-    for (char op : ops) {
-        total_reward += game->play(op);
-    }
-    
-    game->load(save);
-    game->erase(save);
-    return total_reward;
-}
 
 int main() {
     Game *game = new Game(cin);
     
     vector<char> operations;
     int max_ops = game->m;
+    int n = game->n;
     
-    const int LOOKAHEAD_DEPTH = 4;
+    // Adaptive strategy based on problem size
+    int lookahead = (n <= 15) ? 3 : 2;
     
     while (game->bricksRemaining() > 0 && (int)operations.size() < max_ops) {
-        priority_queue<Candidate> candidates;
+        char best_op = 'C';
+        int best_value = -1000000;
         
-        // Evaluate all possible sequences of length LOOKAHEAD_DEPTH
+        // Try all 5 operations
         for (char op1 : {'A', 'B', 'C', 'D', 'E'}) {
-            vector<vector<char>> sequences;
-            sequences.push_back({op1});
+            auto save1 = game->save();
+            int r1 = game->play(op1);
             
-            for (int depth = 1; depth < LOOKAHEAD_DEPTH; depth++) {
-                vector<vector<char>> new_sequences;
-                
-                for (auto& seq : sequences) {
-                    for (char next_op : {'A', 'B', 'C', 'D', 'E'}) {
-                        vector<char> new_seq = seq;
-                        new_seq.push_back(next_op);
-                        new_sequences.push_back(new_seq);
-                    }
-                }
-                
-                // Keep only top 3 sequences to avoid explosion
-                if (new_sequences.size() > 3) {
-                    vector<pair<int, vector<char>>> scored;
-                    for (auto& seq : new_sequences) {
-                        int score = evaluatePath(game, seq);
-                        scored.push_back({score, seq});
-                    }
-                    sort(scored.rbegin(), scored.rend());
+            int value = r1 * 100; // Weight immediate reward heavily
+            
+            // Lookahead level 2
+            if (lookahead >= 2 && game->bricksRemaining() > 0) {
+                int best_r2 = 0;
+                for (char op2 : {'A', 'B', 'C', 'D', 'E'}) {
+                    auto save2 = game->save();
+                    int r2 = game->play(op2);
                     
-                    sequences.clear();
-                    for (int i = 0; i < 3 && i < (int)scored.size(); i++) {
-                        sequences.push_back(scored[i].second);
+                    // Lookahead level 3 only for small problems
+                    if (lookahead >= 3 && game->bricksRemaining() > 0) {
+                        int best_r3 = 0;
+                        for (char op3 : {'A', 'B', 'C', 'D', 'E'}) {
+                            auto save3 = game->save();
+                            int r3 = game->play(op3);
+                            best_r3 = max(best_r3, r3);
+                            game->load(save3);
+                            game->erase(save3);
+                        }
+                        r2 += best_r3 / 3;
                     }
-                } else {
-                    sequences = new_sequences;
+                    
+                    best_r2 = max(best_r2, r2);
+                    game->load(save2);
+                    game->erase(save2);
                 }
+                value += best_r2 * 10;
             }
             
-            // Evaluate the best sequence for this first op
-            int best_score = 0;
-            for (auto& seq : sequences) {
-                int score = evaluatePath(game, seq);
-                best_score = max(best_score, score);
+            if (value > best_value) {
+                best_value = value;
+                best_op = op1;
             }
             
-            Candidate c;
-            c.op = op1;
-            c.total_score = best_score;
-            c.immediate_reward = evaluatePath(game, {op1});
-            candidates.push(c);
+            game->load(save1);
+            game->erase(save1);
         }
         
-        // Execute the best first operation
-        char best_op = candidates.top().op;
         game->play(best_op);
         operations.push_back(best_op);
     }
